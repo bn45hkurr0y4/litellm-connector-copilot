@@ -804,7 +804,14 @@ export abstract class LiteLLMProviderBase {
             // Preserve existing hard-budget retry policy (no new 85% ratio).
             // The trimmer owns tool cost once; only raw explicit context reserves output.
             const hardBudget = getRequestInputTokenBudget(model, modelInfo, outputCap);
-            const trimmedMessages = trimMessagesToFitBudget(messages, toolConfig.tools, model, modelInfo, hardBudget);
+            const trimmedMessages = trimMessagesToFitBudget(
+                messages,
+                toolConfig.tools,
+                model,
+                modelInfo,
+                hardBudget,
+                this.getRawModelName(model.id)
+            );
             const retryOptions = { ...options, modelOptions: { ...options.modelOptions, max_tokens: outputCap } };
             const rebuiltRequest = await this.buildOpenAIChatRequest(
                 trimmedMessages,

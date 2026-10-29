@@ -158,7 +158,14 @@ export class RequestBuilder {
         const outputCap = resolveRequestOutputCap(model, mo.max_tokens, modelInfo);
         const safetyRatio = isAnthropicModel(rawModelId, modelInfo) ? 0.95 * 0.98 : 0.95;
         const inputBudget = getRequestInputTokenBudget(model, modelInfo, outputCap, safetyRatio);
-        const messagesToUse = trimMessagesToFitBudget(messages, toolConfig.tools, model, modelInfo, inputBudget);
+        const messagesToUse = trimMessagesToFitBudget(
+            messages,
+            toolConfig.tools,
+            model,
+            modelInfo,
+            inputBudget,
+            rawModelId
+        );
         const openaiMessages = convertMessages(messagesToUse, {
             attachPromptCacheControl: modelSupportsPromptCacheControl(rawModelId, modelInfo),
         });

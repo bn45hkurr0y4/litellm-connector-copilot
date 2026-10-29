@@ -300,13 +300,16 @@ export function estimateToolTokens(
  * Trim messages to fit within the model's input token budget, preserving the system prompt
  * and as much recent context as possible. Anthropic models get a safety margin to avoid
  * overfilling the context window.
+ * Use the raw tokenizerModelId shared by usage calibration and the final wire count;
+ * keep model.id intact for trim telemetry and log correlation.
  */
 export function trimMessagesToFitBudget(
     messages: readonly vscode.LanguageModelChatRequestMessage[],
     tools: { type: string; function: { name: string; description?: string; parameters?: object } }[] | undefined,
     model: vscode.LanguageModelChatInformation,
     modelInfo?: LiteLLMModelInfo,
-    hardBudgetOverride?: number
+    hardBudgetOverride?: number,
+    tokenizerModelId = model.id
 ): readonly vscode.LanguageModelChatRequestMessage[] {
     const toolTokenCount = estimateToolTokens(tools);
     const tokenLimit =
@@ -327,7 +330,7 @@ export function trimMessagesToFitBudget(
 
                   // Keep an additional small margin for Anthropic-style models which tend to be
                   // stricter about context limits.
-                  return isAnthropicModel(model.id, modelInfo)
+                  return isAnthropicModel(tokenizerModelId, modelInfo)
                       ? Math.max(0, Math.floor(bufferedLimit * 0.98))
                       : bufferedLimit;
               })();
@@ -337,7 +340,7 @@ export function trimMessagesToFitBudget(
         throw new Error("Message exceeds token limit.");
     }
 
-    const originalTokens = countTokens(messages, model.id, modelInfo);
+    const originalTokens = countTokens(messages, tokenizerModelId, modelInfo);
 
     let systemMessage: vscode.LanguageModelChatRequestMessage | undefined;
     const remaining: vscode.LanguageModelChatRequestMessage[] = [];
@@ -374,7 +377,7 @@ export function trimMessagesToFitBudget(
         lastMessage.content[0].value.trim().toLowerCase() === "continue";
 
     if (systemMessage) {
-        const sysTokens = estimateSingleMessageTokens(systemMessage, model.id, modelInfo);
+        const sysTokens = estimateSingleMessageTokens(systemMessage, tokenizerModelId, modelInfo);
         if (sysTokens > budget) {
             throw new Error("Message exceeds token limit.");
         }
@@ -384,7 +387,7 @@ export function trimMessagesToFitBudget(
 
     for (let i = remaining.length - 1; i >= 0; i--) {
         const msg = remaining[i];
-        const msgTokens = estimateSingleMessageTokens(msg, model.id, modelInfo);
+        const msgTokens = estimateSingleMessageTokens(msg, tokenizerModelId, modelInfo);
 
         // If it's a continuation, we MUST include the immediately preceding assistant message
         // to provide context for where to resume.
