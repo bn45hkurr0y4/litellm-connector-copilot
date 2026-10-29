@@ -48,9 +48,9 @@ function history(): vscode.LanguageModelChatRequestMessage[] {
     ];
 }
 
-function learnCalibration(): void {
-    recordCalibrationObservation(rawId, 4000, 1000);
-    recordCalibrationObservation(rawId, 4000, 1000);
+function learnCalibration(id = rawId): void {
+    recordCalibrationObservation(id, 4000, 1000);
+    recordCalibrationObservation(id, 4000, 1000);
 }
 
 suite("Request trimming uses the usage calibration key", () => {
@@ -72,7 +72,7 @@ suite("Request trimming uses the usage calibration key", () => {
             isParameterSupported: () => true,
             getTelemetryOptions: () => ({}),
             usageOptOutModels: new Set(),
-            extractRawModelName: (id) => (id === fullId ? rawId : id),
+            extractRawModelName: (id) => id.replace(/^proxy\.example\//, ""),
         });
     });
 
@@ -162,6 +162,74 @@ suite("Request trimming uses the usage calibration key", () => {
         assert.strictEqual(request.messages[0].content, "a ".repeat(200));
         assert.strictEqual(tokenUtils.countOpenAIChatMessagesTokens(request.messages, rawId, modelInfo), 780);
     });
+
+    for (const fixture of [
+        { id: "anthropic/claude-fable-5-1", provider: "anthropic", inputMaximum: 1021 },
+        { id: "bedrock/us.anthropic.claude-fable-5-1-v1:0", provider: "bedrock", inputMaximum: 1021 },
+        { id: "gemini/gemini-2.5-pro", provider: "gemini", inputMaximum: 1000 },
+        { id: rawId, provider: "chatgpt", inputMaximum: 1000 },
+    ]) {
+        test(`${fixture.id} trims calibrated text, retains fitting media and rejects genuine overflow`, async () => {
+            // 1021 * 0.95 * 0.98 gives Fable the same 950-token budget without
+            // bypassing its additional safety margin; other families use 1000 * 0.95.
+            const host = Object.freeze({
+                ...model,
+                id: `proxy.example/${fixture.id}`,
+                maxInputTokens: fixture.inputMaximum,
+            });
+            const info: LiteLLMModelInfo = Object.freeze({
+                max_input_tokens: fixture.inputMaximum,
+                max_output_tokens: 128,
+                litellm_provider: fixture.provider,
+            });
+            learnCalibration(fixture.id);
+            assert.strictEqual(getCalibrationFactor(fixture.id), 2);
+            const textRequest = await builder.buildOpenAIChatRequest(history(), host, options, info);
+            assert.strictEqual(textRequest.messages.length, 1);
+            assert.strictEqual(tokenUtils.countOpenAIChatMessagesTokens(textRequest.messages, fixture.id, info), 520);
+            for (const media of [
+                { mime: "image/png", bytes: 1, words: 305, cost: 86 },
+                { mime: "application/pdf", bytes: 400, words: 300, cost: 100 },
+            ]) {
+                const attachment = new vscode.LanguageModelDataPart(new Uint8Array(media.bytes), media.mime);
+                const older = vscode.LanguageModelChatMessage.User([attachment]);
+                const latest = vscode.LanguageModelChatMessage.User("a ".repeat(media.words));
+                const messages = [older, latest];
+                const trim = sandbox.spy(tokenUtils, "trimMessagesToFitBudget");
+                try {
+                    const request = await builder.buildOpenAIChatRequest(messages, host, options, info);
+                    assert.deepStrictEqual(
+                        trim.firstCall.returnValue,
+                        messages,
+                        "a fitting attachment must not be removed"
+                    );
+                    assert.strictEqual(trim.firstCall.args[4], inputBudget);
+                    assert.strictEqual(request.model, fixture.id);
+                    assert.strictEqual(request.messages.length, 2);
+                    const content = request.messages[0].content;
+                    assert.ok(Array.isArray(content));
+                    assert.strictEqual(content[0].type, media.mime === "application/pdf" ? "file" : "image_url");
+                    assert.strictEqual(tokenUtils.countMessageMediaTokens(messages), media.cost);
+                    assert.strictEqual(
+                        tokenUtils.countOpenAIChatMessagesTokens(request.messages, fixture.id, info) + media.cost,
+                        880
+                    );
+                } finally {
+                    trim.restore();
+                }
+
+                const oversized = vscode.LanguageModelChatMessage.User([
+                    new vscode.LanguageModelTextPart("a ".repeat(334)),
+                    attachment,
+                ]);
+                assert.ok(tokenUtils.countTokens("a ".repeat(334), fixture.id, info) + media.cost > inputBudget);
+                await assert.rejects(
+                    () => builder.buildOpenAIChatRequest([oversized], host, options, info),
+                    /Message exceeds token limit\./
+                );
+            }
+        });
+    }
 
     for (const Provider of [LiteLLMChatProvider, LiteLLMCommitMessageProvider]) {
         test(`${Provider.name} calibrates the hard-budget overflow trim before rebuilding and retrying`, async () => {

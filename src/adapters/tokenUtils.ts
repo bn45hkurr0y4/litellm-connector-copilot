@@ -147,19 +147,26 @@ export function countTokens(
     // toward observed backend tokenizer behavior. 1.0 when uncalibrated,
     // never below 1.0 (budgets only shrink — the safe direction).
     const factor = getCalibrationFactor(modelId || "default");
-    const applyFactor = (tokens: number): number => Math.ceil(tokens * factor);
+    // Media uses its own conservative heuristic. Keep it uncalibrated, matching
+    // the final wire-budget guard, including media nested inside tool results.
+    const applyFactor = (tokens: number, mediaTokens = 0): number =>
+        Math.ceil((tokens - mediaTokens) * factor) + mediaTokens;
 
     if (typeof input === "string") {
         return applyFactor(tokenizer.countTokens(input).tokens);
     }
     if (Array.isArray(input)) {
         let total = 0;
+        let mediaTokens = 0;
         for (const m of input) {
-            total += tokenizer.countMessageTokens(m).tokens;
+            const result = tokenizer.countMessageTokens(m);
+            total += result.tokens;
+            mediaTokens += result.mediaTokens ?? 0;
         }
-        return applyFactor(total);
+        return applyFactor(total, mediaTokens);
     }
-    return applyFactor(tokenizer.countMessageTokens(input as vscode.LanguageModelChatRequestMessage).tokens);
+    const result = tokenizer.countMessageTokens(input as vscode.LanguageModelChatRequestMessage);
+    return applyFactor(result.tokens, result.mediaTokens);
 }
 
 /**

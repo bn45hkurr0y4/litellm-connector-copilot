@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 ### 🐛 Fixes
 
-* **📏 Prevent false token-limit errors after calibration (#173, #174)**: History trimming now uses the same raw model ID as usage calibration and final request counting, including during context-overflow recovery. Older messages are trimmed to fit instead of causing a local `Message exceeds token limit` failure. Host model IDs remain unchanged for logs and telemetry; model limits, safety margins, and overflow protection are preserved. Bug report and fix by [@bn45hkurr0y4](https://github.com/bn45hkurr0y4). (`src/adapters/tokenUtils.ts`, `src/providers/base/requestBuilder.ts`, `src/providers/liteLLMProviderBase.ts`)
+* **📏 Prevent false token-limit errors after calibration (#173, #174)**: History trimming now uses the same raw model ID as usage calibration and final request counting, including during context-overflow recovery. Older messages are trimmed to fit instead of causing a local `Message exceeds token limit` failure. Image/PDF estimates remain uncalibrated, matching the final size check so fitting multimodal history is not discarded. Host model IDs remain unchanged for logs and telemetry; model limits, safety margins, and overflow protection are preserved. Bug report and fix by [@bn45hkurr0y4](https://github.com/bn45hkurr0y4). (`src/adapters/tokenUtils.ts`, `src/adapters/tokenizers/heuristicTokenizer.ts`, `src/providers/base/requestBuilder.ts`, `src/providers/liteLLMProviderBase.ts`)
 
 ### 🧹 Chores
 
