@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### 🐛 Fixes
 
+* **📏 Prevent false token-limit errors after calibration (#173, #174)**: History trimming now uses the same raw model ID as usage calibration and final request counting, including during context-overflow recovery. Older messages are trimmed to fit instead of causing a local `Message exceeds token limit` failure. Host model IDs remain unchanged for logs and telemetry; model limits, safety margins, and overflow protection are preserved. (`src/adapters/tokenUtils.ts`, `src/providers/base/requestBuilder.ts`, `src/providers/liteLLMProviderBase.ts`)
+
 * **🧠 Preserve native OpenAI reasoning IDs on `/responses`**: replay prior-turn reasoning with its original `rs_…` ID instead of a fabricated `reasoning_N`, preventing ChatGPT/OpenAI multi-turn chats from getting stuck. Encrypted reasoning is requested only for known reasoning-capable native models; stale ciphertext and pre-fix histories use the existing one-shot continuity retry. The unsupported-parameter retry also preserves required `input`, `messages`, and `model` roots when a nested field is rejected. Bug report, root-cause analysis, and original fix by [@bn45hkurr0y4](https://github.com/bn45hkurr0y4) in #170 and PR #169; this implementation is the focused follow-up in PR #171. (`src/adapters/responsesAdapter.ts`, `src/adapters/streaming/responsesReasoningEvents.ts`, `src/utils.ts`, `src/providers/base/thinkingBlockRetry.ts`, `src/adapters/litellmClient.ts`)
 
 ## [2.5.17] - 2026-10-16
