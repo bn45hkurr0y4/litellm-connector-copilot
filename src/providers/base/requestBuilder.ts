@@ -126,6 +126,34 @@ export class RequestBuilder {
         return promptCachePolicy;
     }
 
+    /** Preserve the existing hard-budget overflow policy before rebuilding through the normal pipeline. */
+    public prepareOverflowRetry(
+        request: OpenAIChatCompletionRequest,
+        messages: readonly vscode.LanguageModelChatRequestMessage[],
+        model: vscode.LanguageModelChatInformation,
+        options: vscode.ProvideLanguageModelChatResponseOptions,
+        modelInfo?: LiteLLMModelInfo
+    ): {
+        messages: readonly vscode.LanguageModelChatRequestMessage[];
+        options: vscode.ProvideLanguageModelChatResponseOptions;
+    } {
+        const outputCap = resolveRequestOutputCap(model, request.max_tokens, modelInfo);
+        const hardBudget = getRequestInputTokenBudget(model, modelInfo, outputCap);
+        // Charge tools once and reserve output only against explicit combined context.
+        const trimmedMessages = trimMessagesToFitBudget(
+            messages,
+            convertTools(options).tools,
+            model,
+            modelInfo,
+            hardBudget,
+            this.extractRawModelName(model.id)
+        );
+        return {
+            messages: trimmedMessages,
+            options: { ...options, modelOptions: { ...options.modelOptions, max_tokens: outputCap } },
+        };
+    }
+
     public async buildOpenAIChatRequest(
         messages: readonly vscode.LanguageModelChatRequestMessage[],
         model: vscode.LanguageModelChatInformation,

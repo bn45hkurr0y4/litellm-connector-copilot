@@ -6,6 +6,7 @@ import { selectTokenizer } from "./tokenizers/selectTokenizer";
 import { getCalibrationFactor } from "./tokenizers/tokenCalibration";
 import type { TelemetryService } from "../telemetry/telemetryService";
 import { getRequestInputTokenBudget } from "./requestTokenBudget";
+import { isBinaryContentMimeType } from "./dataUriContentItem";
 
 // Token estimation constants for binary media types
 // These are conservative estimates to avoid context window overflow
@@ -51,6 +52,18 @@ export function estimateMediaTokenCost(mimeType: string, dataLength: number): nu
 
 /** Count only media so finalized wire text/tool metadata can be added without duplication. */
 export function countMessageMediaTokens(messages: readonly vscode.LanguageModelChatRequestMessage[]): number {
+    return sumMessageMedia(messages, estimateMediaTokenCost);
+}
+
+/** Detect media even when its payload is empty and therefore has no estimated token cost. */
+export function hasMessageMedia(messages: readonly vscode.LanguageModelChatRequestMessage[]): boolean {
+    return sumMessageMedia(messages, (mimeType) => (isBinaryContentMimeType(mimeType) ? 1 : 0)) > 0;
+}
+
+function sumMessageMedia(
+    messages: readonly vscode.LanguageModelChatRequestMessage[],
+    valueOf: (mimeType: string, byteLength: number) => number
+): number {
     const countPart = (part: unknown): number => {
         if (typeof part !== "object" || part === null) {
             return 0;
@@ -61,7 +74,7 @@ export function countMessageMediaTokens(messages: readonly vscode.LanguageModelC
             "data" in part &&
             part.data instanceof Uint8Array
         ) {
-            return estimateMediaTokenCost(part.mimeType, part.data.length);
+            return valueOf(part.mimeType, part.data.length);
         }
         if ("content" in part && Array.isArray(part.content)) {
             return part.content.reduce<number>((sum, nested: unknown) => sum + countPart(nested), 0);
